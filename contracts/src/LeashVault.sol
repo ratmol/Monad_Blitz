@@ -15,7 +15,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///
 /// Strategy returns are derived from block data rather than supplied by the
 /// caller, so the off-chain service that drives the agent cannot fabricate a
-/// favourable market. Anyone can recompute a period's returns from the chain.
+/// favourable market. Each epoch's market is committed to the hash of the block
+/// before it began: unknowable until that block is mined, and stored on first
+/// use so anyone can recompute a past period's returns from the chain forever.
 contract LeashVault is Ownable, ReentrancyGuard {
     /// @dev All ratios in this contract are basis points: 10_000 bps == 100%.
     uint256 public constant BPS_DENOMINATOR = 10_000;
@@ -41,6 +43,10 @@ contract LeashVault is Ownable, ReentrancyGuard {
     /// observations to be worth learning; a rate that is redrawn every block gives
     /// every strategy the same expected return at every instant, and an agent on
     /// top of that is indistinguishable from noise no matter how good it is.
+    ///
+    /// Must stay strictly below the 256 block `blockhash` window. An epoch is
+    /// anchored to the hash of the block before it began, and that hash has to
+    /// still be readable at every block in the epoch for {_liveAnchor} to work.
     uint256 public constant RATE_EPOCH_BLOCKS = 200;
 
     /// @notice The only address allowed to call {rebalance}.
@@ -61,6 +67,10 @@ contract LeashVault is Ownable, ReentrancyGuard {
 
     uint256[] private _weights;
 
+    /// @dev Epoch => the block hash its market was drawn from. Written once, on
+    /// the first rebalance that settles inside the epoch, and never overwritten.
+    mapping(uint256 => bytes32) private _epochAnchors;
+
     event Deposited(address indexed owner, uint256 amount, uint256 totalValue);
     event Withdrawn(address indexed owner, uint256 amount, uint256 totalValue);
     event AgentUpdated(address indexed previousAgent, address indexed newAgent);
@@ -72,8 +82,10 @@ contract LeashVault is Ownable, ReentrancyGuard {
         bytes32 rationaleHash
     );
     event Halted(uint256 highWaterMark, uint256 totalValue, uint256 drawdownBps);
+    event EpochAnchored(uint256 indexed epoch, bytes32 anchor);
 
     error NotAgent();
+    error EpochNotAnchored(uint256 epoch);
     error VaultHalted();
     error CooldownActive(uint256 secondsRemaining);
     error InvalidWeightCount(uint256 provided, uint256 expected);
@@ -175,7 +187,10 @@ contract LeashVault is Ownable, ReentrancyGuard {
 
         lastRebalanceAt = block.timestamp;
 
-        int256 portfolioRateBps = _settle();
+        // Pin this epoch's market into storage before settling against it, so the
+        // period the agent was just paid for stays verifiable after the block hash
+        // it came from has aged out of the EVM's 256 block window.
+        int256 portfolioRateBps = _settle(_anchorEpoch(currentEpoch()));
 
         // The breaker tripping is itself a state change worth keeping, so this
         // call succeeds and simply declines to apply the new allocation. Every
@@ -195,24 +210,43 @@ contract LeashVault is Ownable, ReentrancyGuard {
         return _weights;
     }
 
-    /// @notice This period's return for one strategy, in bps, possibly negative.
-    /// @dev Keyed on the epoch rather than on a block hash. No caller can choose it,
-    /// and unlike `blockhash` it stays computable forever: `blockhash` returns zero
-    /// beyond 256 blocks, which on Monad is about 77 seconds, so a hash-derived rate
-    /// stops being reproducible almost immediately after the fact. An agent can still
-    /// influence *when* it observes a rate by choosing when to send its transaction;
-    /// it can never influence what the rate is.
-    function strategyRateBps(uint256 strategyId) public view returns (int256) {
-        return rateAtEpoch(block.number / RATE_EPOCH_BLOCKS, strategyId);
+    /// @notice The epoch the chain is currently in.
+    function currentEpoch() public view returns (uint256) {
+        return block.number / RATE_EPOCH_BLOCKS;
     }
 
-    /// @notice The rate a strategy paid in any epoch, past or present.
+    /// @notice The block hash an epoch's market was drawn from, or zero if that
+    /// epoch has neither been settled nor started.
+    function epochAnchor(uint256 epoch) external view returns (bytes32) {
+        bytes32 stored = _epochAnchors[epoch];
+        return stored != bytes32(0) ? stored : _liveAnchor(epoch);
+    }
+
+    /// @notice This period's return for one strategy, in bps, possibly negative.
+    /// @dev An agent can influence *when* it observes a rate by choosing when to
+    /// send its transaction; it can never influence what the rate is, and cannot
+    /// know it before the epoch starts.
+    function strategyRateBps(uint256 strategyId) public view returns (int256) {
+        return rateAtEpoch(currentEpoch(), strategyId);
+    }
+
+    /// @notice The rate a strategy paid in a settled or currently running epoch.
+    /// @dev Reverts for an epoch that has not begun -- that is the point. The rate
+    /// is a function of a block hash that does not exist yet, so neither the agent
+    /// nor anyone else can compute a future market and allocate against it.
+    /// Reverts equally for a past epoch nobody ever rebalanced in: no rate was
+    /// applied then, so there is nothing to verify.
+    function rateAtEpoch(uint256 epoch, uint256 strategyId) public view returns (int256) {
+        return rateFromAnchor(_requireAnchor(epoch), strategyId);
+    }
+
+    /// @notice The derivation itself, given an epoch's anchor.
     /// @dev Pure and public on purpose. "Anyone can verify our market" is only true
     /// if anyone can actually run the derivation, so this is the claim made
-    /// executable: pick any historical epoch, call this, compare against the
-    /// Rebalanced logs from that period.
-    function rateAtEpoch(uint256 epoch, uint256 strategyId) public pure returns (int256) {
-        uint256 seed = uint256(keccak256(abi.encode(epoch, strategyId)));
+    /// executable: read the anchor out of an EpochAnchored log, run this off-chain,
+    /// compare against the Rebalanced logs from that period.
+    function rateFromAnchor(bytes32 anchor, uint256 strategyId) public pure returns (int256) {
+        uint256 seed = uint256(keccak256(abi.encode(anchor, strategyId)));
         uint256 span = 2 * MAX_ABS_RATE_BPS + 1;
         // Both casts are of values bounded by `span` (401), far inside int256.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -264,14 +298,45 @@ contract LeashVault is Ownable, ReentrancyGuard {
         if (sumBps != BPS_DENOMINATOR) revert WeightsMustSumToOne(sumBps);
     }
 
+    /// @dev The hash of the block immediately before `epoch` began. Zero when the
+    /// epoch has not started, or when its start has aged past the 256 block
+    /// `blockhash` window; inside a running epoch it is always readable, because
+    /// {RATE_EPOCH_BLOCKS} is smaller than that window.
+    function _liveAnchor(uint256 epoch) private view returns (bytes32) {
+        uint256 epochStart = epoch * RATE_EPOCH_BLOCKS;
+        if (epochStart == 0) return bytes32(0);
+        return blockhash(epochStart - 1);
+    }
+
+    function _requireAnchor(uint256 epoch) private view returns (bytes32 anchor) {
+        anchor = _epochAnchors[epoch];
+        if (anchor != bytes32(0)) return anchor;
+
+        anchor = _liveAnchor(epoch);
+        if (anchor == bytes32(0)) revert EpochNotAnchored(epoch);
+    }
+
+    /// @dev Stores an epoch's anchor the first time the epoch is settled. One
+    /// SSTORE per epoch buys permanent recomputability of that epoch's market.
+    function _anchorEpoch(uint256 epoch) private returns (bytes32 anchor) {
+        anchor = _epochAnchors[epoch];
+        if (anchor != bytes32(0)) return anchor;
+
+        anchor = _liveAnchor(epoch);
+        if (anchor == bytes32(0)) revert EpochNotAnchored(epoch);
+
+        _epochAnchors[epoch] = anchor;
+        emit EpochAnchored(epoch, anchor);
+    }
+
     /// @dev Applies the period's return to the book under the *outgoing* weights,
     /// which is the allocation that was actually exposed to it.
     /// @return portfolioRateBps The weighted return applied, in bps.
-    function _settle() private returns (int256 portfolioRateBps) {
+    function _settle(bytes32 anchor) private returns (int256 portfolioRateBps) {
         for (uint256 i = 0; i < STRATEGY_COUNT; i++) {
             // Each weight is validated at or below BPS_DENOMINATOR (10_000).
             // forge-lint: disable-next-line(unsafe-typecast)
-            portfolioRateBps += int256(_weights[i]) * strategyRateBps(i);
+            portfolioRateBps += int256(_weights[i]) * rateFromAnchor(anchor, i);
         }
         // Weights sum to BPS_DENOMINATOR, so this divides the weighted sum back
         // down to a plain bps rate. Solidity truncates toward zero.
