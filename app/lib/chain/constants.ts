@@ -48,6 +48,17 @@ export const RATE_EPOCH_BLOCKS = 200n;
  */
 export const BLOCKHASH_WINDOW_BLOCKS = 256n;
 
+/**
+ * Warn below this agent balance, in wei (0.1 MON).
+ *
+ * Lives here rather than beside the adapter because the dashboard renders the
+ * warning and must not import viem into the browser bundle to learn the threshold.
+ * At ~1,200 transactions an hour a faucet-funded wallet empties fast, and an agent
+ * that quietly stops because it ran out of gas looks identical on screen to an agent
+ * that crashed.
+ */
+export const LOW_BALANCE_WARN_WEI = 100_000_000_000_000_000n;
+
 /** Monad testnet. */
 export const MONAD_TESTNET_CHAIN_ID = 10143;
 export const MONAD_RPC_URL = "https://testnet-rpc.monad.xyz";

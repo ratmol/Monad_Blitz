@@ -24,11 +24,14 @@ export function TxFeed({history, live}: {history: TickRecord[]; live: boolean}) 
   }
 
   return (
-    <ul className="flex max-h-96 flex-col divide-y divide-border-subtle overflow-y-auto">
+    <ul className="thin-scroll flex max-h-[22rem] flex-col divide-y divide-border-subtle overflow-y-auto">
       {rows.map((tick, i) => (
-        <li key={`${tick.at}-${i}`} className="flex items-start gap-4 py-3">
+        <li
+          key={`${tick.at}-${i}`}
+          className="flex items-start gap-4 px-2 py-2.5 transition-colors hover:bg-surface-raised"
+        >
           <span
-            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+            className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
               tick.error ? "bg-loss" : tick.reason === "exploit" ? "bg-agent" : "bg-warn"
             }`}
             aria-hidden
@@ -36,13 +39,15 @@ export function TxFeed({history, live}: {history: TickRecord[]; live: boolean}) 
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-3">
-              <span className="tabular text-sm font-bold">
+              <span className="mono text-[13px] font-medium">
                 {tick.weights.map((w) => `${Math.round(w / 100)}%`).join(" / ")}
               </span>
-              <span className="text-xs uppercase tracking-widest text-muted">{tick.reason}</span>
+              <span className="text-[10px] uppercase tracking-[0.14em] text-muted-dim">
+                {tick.reason}
+              </span>
               {tick.realisedBps !== null ? (
                 <span
-                  className={`tabular text-sm font-semibold ${
+                  className={`mono text-[13px] font-medium ${
                     tick.realisedBps >= 0 ? "text-gain" : "text-loss"
                   }`}
                 >
@@ -51,32 +56,32 @@ export function TxFeed({history, live}: {history: TickRecord[]; live: boolean}) 
               ) : null}
             </div>
 
-            <p className="mt-0.5 truncate text-xs text-muted" title={tick.rationale}>
+            <p className="mt-0.5 truncate text-[11px] text-muted-dim" title={tick.rationale}>
               {tick.rationale}
             </p>
 
-            {tick.error ? <p className="mt-0.5 text-xs text-loss">{tick.error}</p> : null}
+            {tick.error ? <p className="mt-0.5 text-[11px] text-loss">{tick.error}</p> : null}
           </div>
 
           <div className="shrink-0 text-right">
             {tick.txHash === null ? (
-              <span className="text-xs text-muted">no tx</span>
+              <span className="text-[11px] text-muted-dim">no tx</span>
             ) : live ? (
               <a
                 href={explorerTxUrl(tick.txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="tabular text-xs font-semibold text-agent underline decoration-agent/40 underline-offset-2 hover:decoration-agent"
+                className="mono text-[11px] text-agent underline decoration-agent/30 underline-offset-4 hover:decoration-agent"
               >
                 {short(tick.txHash)}
               </a>
             ) : (
-              <span className="tabular text-xs text-muted" title="simulated — no explorer page">
+              <span className="mono text-[11px] text-muted-dim" title="simulated — no explorer page">
                 {short(tick.txHash)}
               </span>
             )}
             {tick.gasUsed ? (
-              <div className="tabular mt-0.5 text-xs text-muted">
+              <div className="mono mt-0.5 text-[10px] text-muted-dim">
                 {Number(tick.gasUsed).toLocaleString()} gas
               </div>
             ) : null}

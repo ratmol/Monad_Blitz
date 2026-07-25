@@ -25,43 +25,41 @@ export function Weights({
   const capPercent = (MAX_WEIGHT_BPS / BPS_DENOMINATOR) * 100;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <div className="relative">
         {/* The cap, drawn once across the whole stack so the eye reads it as a wall. */}
         <div
-          className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-dashed border-warn"
+          className="pointer-events-none absolute inset-y-0 z-10 border-l border-dashed border-warn/70"
           style={{left: `${capPercent}%`}}
           aria-hidden
         >
-          <span className="absolute -top-1 left-2 whitespace-nowrap text-xs font-semibold uppercase tracking-widest text-warn">
-            60% cap
+          <span className="absolute -top-0.5 left-2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-warn">
+            {capPercent}% cap
           </span>
         </div>
 
-        <div className="flex flex-col gap-3 pt-5">
+        <div className="flex flex-col gap-2.5 pt-5">
           {weights.map((bps, i) => {
             const percent = (bps / BPS_DENOMINATOR) * 100;
             const atCap = bps >= MAX_WEIGHT_BPS;
             const rate = rates[i];
             return (
               <div key={i} className="flex items-center gap-3">
-                <span className="tabular w-16 shrink-0 text-sm font-semibold text-muted">
-                  S{i}
-                </span>
-                <div className="h-8 flex-1 overflow-hidden rounded-md bg-background">
+                <span className="mono w-8 shrink-0 text-[13px] text-muted">S{i}</span>
+                <div className="h-7 flex-1 overflow-hidden rounded-md bg-surface-raised">
                   <div
                     className={`h-full rounded-md transition-[width] duration-500 ${
-                      atCap ? "bg-warn" : "bg-agent"
+                      atCap ? "bg-warn/80" : "bg-agent/80"
                     }`}
                     style={{width: `${percent}%`}}
                   />
                 </div>
-                <span className="tabular w-20 shrink-0 text-right text-lg font-bold">
+                <span className="mono w-12 shrink-0 text-right text-[15px] font-medium">
                   {percent.toFixed(0)}%
                 </span>
                 <span
-                  className={`tabular w-24 shrink-0 text-right text-sm font-semibold ${
-                    rate === undefined ? "text-muted" : rate >= 0 ? "text-gain" : "text-loss"
+                  className={`mono w-20 shrink-0 text-right text-[13px] ${
+                    rate === undefined ? "text-muted-dim" : rate >= 0 ? "text-gain" : "text-loss"
                   }`}
                 >
                   {rate === undefined ? "no market" : formatBps(rate)}
@@ -72,9 +70,9 @@ export function Weights({
         </div>
       </div>
 
-      <p className="text-xs text-muted">
+      <p className="mt-auto text-[11px] leading-relaxed text-muted-dim">
         Rates are this epoch&apos;s on-chain returns, readable by anyone via{" "}
-        <code className="text-foreground">strategyRates()</code>. The agent never reads them — it
+        <code className="mono text-muted">strategyRates()</code>. The agent never reads them — it
         learns from what its own allocations actually paid.
       </p>
     </div>

@@ -5,6 +5,7 @@ import {explorerAddressUrl, MAX_DRAWDOWN_BPS, TICK_INTERVAL_MS} from "../../../l
 import type {DashboardState} from "../../../lib/agent/dashboard";
 import {compareCost} from "../../../lib/agent/gas";
 import {runtime} from "../../../lib/agent/runtime";
+import {networkTelemetry} from "../../../lib/chain/network";
 
 /**
  * Everything the dashboard renders, in one request.
@@ -23,7 +24,9 @@ export async function GET() {
 
   // Reads that touch the chain are individually fallible and individually
   // non-essential. A dead balance read must not blank the whole dashboard.
-  const vault = await readVault(adapter);
+  // Network telemetry is independently throttled and never throws, so it rides
+  // alongside rather than gating the rest of the payload.
+  const [vault, network] = await Promise.all([readVault(adapter), networkTelemetry()]);
 
   const payload: DashboardState = {
     mode,
@@ -42,6 +45,7 @@ export async function GET() {
       vault: mode === "live" ? explorerAddressUrl(adapter.getVaultAddress()) : null,
       agent: mode === "live" ? explorerAddressUrl(adapter.getAgentAddress()) : null,
     },
+    network,
   };
 
   return NextResponse.json(payload);

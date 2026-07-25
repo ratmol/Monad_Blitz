@@ -1,70 +1,308 @@
 @import "tailwindcss";
 
 /**
- * Projector-first. This is read from the back of a room, on a screen nobody has
- * calibrated, for ninety seconds. Everything below optimises for that: one dark
- * background so the room's lighting cannot wash it out, deliberately few accent
- * colours, and no thin grey-on-grey anywhere.
+ * Terminal, not landing page.
+ *
+ * The reference points are Bloomberg, Linear, Stripe and an F1 pit wall: dense,
+ * grayscale by default, with colour reserved for state rather than decoration. If a
+ * rule here had to be summarised in one line it is that nothing glows. Depth comes
+ * from a one-pixel border and a flat surface step, never from a shadow or a blur.
+ *
+ * Projector constraints still hold underneath all of it: one dark background, no
+ * thin grey-on-grey for anything that carries meaning, and numbers large enough to
+ * read from the back of a room.
  *
  * Tailwind v4 — configured here via @theme, not a tailwind.config.js. There isn't one.
  */
 
 :root {
-  --background: #08080c;
-  --surface: #12121a;
-  --border: #262633;
-  --foreground: #f4f4f6;
-  --muted: #a3a3b8;
+  --background: #09090b;
+  --surface: #13151a;
+  /* One step up, for rows and wells nested inside a surface. */
+  --surface-raised: #1a1d24;
 
-  /* Monad's purple. The agent's colour throughout — chart line, weights, accents. */
-  --agent: #836ef9;
-  --agent-dim: #4c3fa8;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --foreground: #ededef;
+  /* Secondary text. Still passes contrast on the background; not decorative grey. */
+  --muted: #8a8f98;
+  --muted-dim: #5e636e;
+
+  /* Monad's purple, used only for agent identity and Monad-specific actions. */
+  --accent: #836ef9;
+  --accent-dim: #4c3fa8;
 
   /* The baseline is deliberately colourless: it is the control, not a competitor. */
-  --baseline: #8a8a9e;
+  --baseline: #6e7381;
 
-  --gain: #3ddc97;
-  --loss: #ff5c72;
-  --warn: #ffb347;
+  --gain: #3dd68c;
+  --loss: #e5484d;
+  --warn: #e3a008;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
   --color-border-subtle: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
-  --color-agent: var(--agent);
-  --color-agent-dim: var(--agent-dim);
+  --color-muted-dim: var(--muted-dim);
+  --color-agent: var(--accent);
+  --color-agent-dim: var(--accent-dim);
   --color-baseline: var(--baseline);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
   --color-warn: var(--warn);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-plex-mono);
+  --font-display: var(--font-big-shoulders);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-}
-
-/* Numbers that change every 3s must not reflow the layout as digits change width. */
-.tabular {
+  /* Tabular by default: this is a numbers screen, and digits that change width
+     every tick make the whole layout twitch. */
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@keyframes pulse-halt {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+/**
+ * Monospace for anything a human might compare digit by digit: prices, addresses,
+ * hashes, gas, block heights, timestamps.
+ */
+.mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-.halt-pulse {
-  animation: pulse-halt 1.1s ease-in-out infinite;
+/**
+ * The one display face on the whole product, reserved for hero-scale headlines.
+ * Condensed and heavy so a single line reads as a placard, not a paragraph.
+ */
+.display {
+  font-family: var(--font-big-shoulders), ui-sans-serif, sans-serif;
+  font-stretch: condensed;
+  letter-spacing: -0.01em;
+  line-height: 0.92;
+}
+
+/* --------------------------------- marketing shell --------------------------------- */
+
+/**
+ * Marketing sections snap into view on scroll (proximity, not mandatory — a user
+ * scrolling fast is never trapped mid-gesture). The dense dashboard further down opts
+ * out entirely: nothing about reading a data grid should feel like it is being pulled
+ * out of your hands.
+ */
+.snap-shell {
+  scroll-snap-type: y proximity;
+}
+
+.snap-section {
+  scroll-snap-align: start;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .halt-pulse { animation: none; }
+  .snap-shell {
+    scroll-snap-type: none;
+  }
+}
+
+/* ------------------------------- ambient depth ------------------------------ */
+
+/**
+ * A slow engineering grid behind everything.
+ *
+ * Two things keep it from being wallpaper: it drifts about one pixel a second, which
+ * the eye reads as "this surface is alive" without ever pulling focus, and it fades
+ * out toward the bottom so dense panels sit on flat background rather than on lines.
+ */
+.ambient-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 100% 60% at 50% 0%, #000 30%, transparent 78%);
+  animation: grid-drift 48s linear infinite;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 56px 56px;
+  }
+}
+
+/* --------------------------------- motion ---------------------------------- */
+
+/**
+ * Panels arrive rather than appear. The stagger is set per panel with an inline
+ * delay; nothing here gates information behind an animation, it only softens the
+ * moment it lands.
+ */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.panel-in {
+  animation: panel-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/** Border brightness on hover, never a glow or a lift. */
+.panel-hover {
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.panel-hover:hover {
+  border-color: var(--border-strong);
+  transform: scale(1.004);
+}
+
+/**
+ * The network heartbeat. One dot, tied to a real block arriving, so motion on this
+ * screen always means something happened rather than that a timer fired.
+ */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(61, 214, 140, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(61, 214, 140, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(61, 214, 140, 0);
+  }
+}
+
+.pulse-dot {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@keyframes pulse-halt {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.halt-pulse {
+  animation: pulse-halt 1.2s ease-in-out infinite;
+}
+
+/* A block height that just changed, acknowledged for one frame-length. */
+@keyframes tick-flash {
+  from {
+    color: var(--gain);
+  }
+  to {
+    color: inherit;
+  }
+}
+
+.tick-flash {
+  animation: tick-flash 600ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-grid,
+  .panel-in,
+  .pulse-dot,
+  .halt-pulse,
+  .tick-flash {
+    animation: none;
+  }
+
+  .panel-hover:hover {
+    transform: none;
+  }
+}
+
+/**
+ * The tether: the page's one signature moment. Two paths sit on top of each other —
+ * slack (a loose catenary) and taut (a straight line) — and crossfade by scroll
+ * progress via the `--tension` custom property that Hero.tsx writes on scroll. Cheap
+ * (opacity only, GPU-composited) and it is the literal shape of the project's claim:
+ * the agent has slack to move within, and a line that never fully lets go.
+ */
+.tether-slack {
+  opacity: calc(1 - var(--tension, 0));
+}
+
+.tether-taut {
+  opacity: var(--tension, 0);
+}
+
+.tether-node {
+  transition: transform 200ms ease-out;
+  transform: scale(calc(1 + var(--tension, 0) * 0.06));
+}
+
+/**
+ * Section 2's loop diagram: one pulse travels the ring Market -> Reward -> Decision ->
+ * Execution and back. `offset-path` keeps the motion glued to the actual connecting
+ * line instead of faking it with four separately-timed opacity keyframes.
+ */
+@keyframes loop-travel {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+.loop-pulse {
+  animation: loop-travel 4.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tether-slack,
+  .tether-taut {
+    opacity: 1;
+  }
+
+  .tether-taut {
+    display: none;
+  }
+
+  .loop-pulse {
+    animation: none;
+  }
+}
+
+/* Dense scrollbars, so a scrolling log does not sprout a chunky OS bar mid-demo. */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
