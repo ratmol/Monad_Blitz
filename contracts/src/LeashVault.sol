@@ -35,6 +35,14 @@ contract LeashVault is Ownable, ReentrancyGuard {
     /// @notice Per-period strategy return is uniform over [-2%, +2%].
     uint256 public constant MAX_ABS_RATE_BPS = 200;
 
+    /// @notice Blocks a strategy's rate holds for before it is redrawn.
+    /// @dev At Monad's ~300ms blocks this is about a minute, or roughly twenty
+    /// rebalances at a 3s tick. The agent needs a rate to persist across enough
+    /// observations to be worth learning; a rate that is redrawn every block gives
+    /// every strategy the same expected return at every instant, and an agent on
+    /// top of that is indistinguishable from noise no matter how good it is.
+    uint256 public constant RATE_EPOCH_BLOCKS = 200;
+
     /// @notice The only address allowed to call {rebalance}.
     address public agent;
 
@@ -188,13 +196,23 @@ contract LeashVault is Ownable, ReentrancyGuard {
     }
 
     /// @notice This period's return for one strategy, in bps, possibly negative.
-    /// @dev Derived from the previous block hash, which no caller can choose.
-    /// An agent can still influence *when* it observes a rate by choosing when to
-    /// send the transaction; it can never influence what the rate is.
+    /// @dev Keyed on the epoch rather than on a block hash. No caller can choose it,
+    /// and unlike `blockhash` it stays computable forever: `blockhash` returns zero
+    /// beyond 256 blocks, which on Monad is about 77 seconds, so a hash-derived rate
+    /// stops being reproducible almost immediately after the fact. An agent can still
+    /// influence *when* it observes a rate by choosing when to send its transaction;
+    /// it can never influence what the rate is.
     function strategyRateBps(uint256 strategyId) public view returns (int256) {
-        uint256 seed = uint256(
-            keccak256(abi.encodePacked(blockhash(block.number - 1), block.number, strategyId))
-        );
+        return rateAtEpoch(block.number / RATE_EPOCH_BLOCKS, strategyId);
+    }
+
+    /// @notice The rate a strategy paid in any epoch, past or present.
+    /// @dev Pure and public on purpose. "Anyone can verify our market" is only true
+    /// if anyone can actually run the derivation, so this is the claim made
+    /// executable: pick any historical epoch, call this, compare against the
+    /// Rebalanced logs from that period.
+    function rateAtEpoch(uint256 epoch, uint256 strategyId) public pure returns (int256) {
+        uint256 seed = uint256(keccak256(abi.encode(epoch, strategyId)));
         uint256 span = 2 * MAX_ABS_RATE_BPS + 1;
         // Both casts are of values bounded by `span` (401), far inside int256.
         // forge-lint: disable-next-line(unsafe-typecast)

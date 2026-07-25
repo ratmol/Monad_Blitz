@@ -19,7 +19,8 @@ contract LeashVaultTest is Test {
     bytes32 internal constant RATIONALE = keccak256("momentum favours strategy 1");
 
     function setUp() public {
-        // Move off genesis so `blockhash(block.number - 1)` has room to work.
+        // Start inside epoch 0 rather than at genesis, so nothing depends on the
+        // block number happening to be zero.
         vm.roll(100);
         vm.warp(1_000);
 
@@ -36,26 +37,20 @@ contract LeashVaultTest is Test {
 
     function test_RevertWhen_AgentWithdraws() public {
         vm.prank(agent);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent));
         vault.withdraw(1 ether);
     }
 
     function test_RevertWhen_AgentDeposits() public {
         vm.deal(agent, 1 ether);
         vm.prank(agent);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent));
         vault.deposit{value: 1 ether}();
     }
 
     function test_RevertWhen_AgentRotatesAgent() public {
         vm.prank(agent);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent));
         vault.setAgent(stranger);
     }
 
@@ -232,6 +227,7 @@ contract LeashVaultTest is Test {
 
     function test_StrategyRatesAreBoundedAndDeriveFromBlockData() public {
         int256 maxAbs = int256(vault.MAX_ABS_RATE_BPS());
+        uint256 epochLen = vault.RATE_EPOCH_BLOCKS();
 
         int256[] memory before = vault.strategyRates();
         for (uint256 i = 0; i < before.length; i++) {
@@ -243,21 +239,58 @@ contract LeashVaultTest is Test {
         int256[] memory again = vault.strategyRates();
         assertEq(again[0], before[0]);
 
+        // Still the same rates a block later: an agent needs a rate to sit still
+        // long enough to be worth learning.
         vm.roll(block.number + 1);
-        vm.setBlockhash(block.number - 1, keccak256("a different block"));
+        assertEq(vault.strategyRates()[0], before[0], "rate must hold within an epoch");
+
+        vm.roll(block.number - (block.number % epochLen) + epochLen);
         int256[] memory next = vault.strategyRates();
 
         bool anyChanged;
         for (uint256 i = 0; i < next.length; i++) {
             if (next[i] != before[i]) anyChanged = true;
         }
-        assertTrue(anyChanged, "rates should follow block data");
+        assertTrue(anyChanged, "rates should redraw across an epoch boundary");
+    }
+
+    /// @dev The verifiability claim, as a test. `blockhash` returns zero past 256
+    /// blocks -- about 77 seconds on Monad -- so a hash-derived rate becomes
+    /// irreproducible almost as soon as it is used. This one does not.
+    function test_OldEpochRatesAreStillRecomputable() public {
+        uint256 epoch = block.number / vault.RATE_EPOCH_BLOCKS();
+        int256 rateThen = vault.strategyRateBps(1);
+
+        vm.roll(block.number + 500_000);
+
+        assertEq(vault.rateAtEpoch(epoch, 1), rateThen, "history must stay verifiable");
+    }
+
+    /// @dev The weighted return the vault applied has to match an independent
+    /// recomputation from the public rates, or the audit trail means nothing.
+    function test_AppliedRateMatchesIndependentRecomputation() public {
+        _rollIntoAdverseEpoch();
+
+        int256 bps = int256(vault.BPS_DENOMINATOR());
+        int256 expectedRate = _expectedPortfolioRateBps();
+        int256 valueBefore = int256(vault.totalValue());
+        int256 expectedValue = valueBefore + (valueBefore * expectedRate) / bps;
+
+        _rebalanceEvenly();
+
+        assertEq(
+            int256(vault.totalValue()),
+            expectedValue,
+            "the applied return must equal what the public rates predict"
+        );
     }
 
     /// @dev Invariant from {LeashVault._resizeBook}: moving capital in or out
     /// must not mask or manufacture a drawdown.
     function test_DepositDoesNotChangeDrawdown() public {
-        _rebalanceIntoLoss();
+        _rollIntoAdverseEpoch();
+        _rebalanceEvenly();
+
         uint256 drawdownBefore = vault.drawdownBps();
         assertGt(drawdownBefore, 0, "expected a loss to measure");
 
@@ -278,33 +311,39 @@ contract LeashVaultTest is Test {
         w[2] = c;
     }
 
-    /// @dev Rebalances repeatedly, each time forcing the block hash to whichever
-    /// candidate produces the worst return, until the breaker trips.
-    function _driveIntoHalt() private {
-        for (uint256 i = 0; i < 100 && !vault.isHalted(); i++) {
-            _rebalanceIntoLoss();
-        }
-    }
+    /// @dev Rolls forward to the next epoch in which every strategy pays at least
+    /// -1%, so the loss that follows does not depend on how the book is allocated.
+    /// Chosen from the public derivation rather than forced with `vm.setBlockhash`:
+    /// the losing market is one the contract really produces.
+    function _rollIntoAdverseEpoch() private {
+        uint256 epochLen = vault.RATE_EPOCH_BLOCKS();
+        uint256 first = block.number / epochLen + 1;
 
-    function _rebalanceIntoLoss() private {
-        vm.warp(block.timestamp + vault.REBALANCE_COOLDOWN());
-        vm.roll(block.number + 1);
-
-        bytes32 worstHash;
-        int256 worstRate = type(int256).max;
-        for (uint256 salt = 0; salt < 32; salt++) {
-            bytes32 candidate = keccak256(abi.encodePacked(salt));
-            vm.setBlockhash(block.number - 1, candidate);
-            int256 rate = _expectedPortfolioRateBps();
-            if (rate < worstRate) {
-                worstRate = rate;
-                worstHash = candidate;
+        for (uint256 epoch = first; epoch < first + 2_000; epoch++) {
+            if (
+                vault.rateAtEpoch(epoch, 0) <= -100 && vault.rateAtEpoch(epoch, 1) <= -100
+                    && vault.rateAtEpoch(epoch, 2) <= -100
+            ) {
+                vm.roll(epoch * epochLen);
+                return;
             }
         }
-        vm.setBlockhash(block.number - 1, worstHash);
+        revert("no adverse epoch within search window");
+    }
 
+    /// @dev Rebalances evenly once, advancing time past the cooldown but not the
+    /// block number, so the epoch -- and therefore the market -- stays put.
+    function _rebalanceEvenly() private {
+        vm.warp(block.timestamp + vault.REBALANCE_COOLDOWN());
         vm.prank(agent);
         vault.rebalance(_weights(3_334, 3_333, 3_333), RATIONALE);
+    }
+
+    function _driveIntoHalt() private {
+        _rollIntoAdverseEpoch();
+        for (uint256 i = 0; i < 200 && !vault.isHalted(); i++) {
+            _rebalanceEvenly();
+        }
     }
 
     /// @dev Recomputed here rather than read from the vault, so the test does not
