@@ -19,9 +19,10 @@ contract LeashVaultTest is Test {
     bytes32 internal constant RATIONALE = keccak256("momentum favours strategy 1");
 
     function setUp() public {
-        // Start inside epoch 0 rather than at genesis, so nothing depends on the
-        // block number happening to be zero.
-        vm.roll(100);
+        // Start well inside a later epoch, and off its boundary. Epoch 0 has no
+        // preceding block to anchor to, and a chain that young is not a case the
+        // vault is meant to run on.
+        vm.roll(100_100);
         vm.warp(1_000);
 
         vault = new LeashVault(owner, agent);
@@ -254,16 +255,64 @@ contract LeashVaultTest is Test {
         assertTrue(anyChanged, "rates should redraw across an epoch boundary");
     }
 
-    /// @dev The verifiability claim, as a test. `blockhash` returns zero past 256
-    /// blocks -- about 77 seconds on Monad -- so a hash-derived rate becomes
-    /// irreproducible almost as soon as it is used. This one does not.
-    function test_OldEpochRatesAreStillRecomputable() public {
-        uint256 epoch = block.number / vault.RATE_EPOCH_BLOCKS();
+    /// @dev The verifiability half of the claim. `blockhash` returns zero past 256
+    /// blocks -- about 77 seconds on Monad -- so a rate read live from a hash
+    /// becomes irreproducible almost as soon as it is used. Settling pins the
+    /// anchor in storage, which outlives that window.
+    function test_SettledEpochRatesAreStillRecomputable() public {
+        uint256 epoch = vault.currentEpoch();
         int256 rateThen = vault.strategyRateBps(1);
+
+        _rebalanceEvenly();
+        bytes32 anchor = vault.epochAnchor(epoch);
 
         vm.roll(block.number + 500_000);
 
         assertEq(vault.rateAtEpoch(epoch, 1), rateThen, "history must stay verifiable");
+        assertEq(vault.epochAnchor(epoch), anchor, "the anchor must outlive blockhash");
+        assertEq(vault.rateFromAnchor(anchor, 1), rateThen, "anyone can rerun the derivation");
+    }
+
+    /// @dev The unpredictability half, and the reason the anchor exists. If a
+    /// future epoch's rates could be read, the agent would not be learning a
+    /// market, it would be reading the answer key.
+    function test_RevertWhen_ReadingAFutureEpochsRates() public {
+        uint256 nextEpoch = vault.currentEpoch() + 1;
+
+        vm.expectRevert(abi.encodeWithSelector(LeashVault.EpochNotAnchored.selector, nextEpoch));
+        vault.rateAtEpoch(nextEpoch, 0);
+    }
+
+    /// @dev An epoch nobody traded through paid nobody anything, so having no rate
+    /// to report for it is correct rather than a gap in the history.
+    function test_RevertWhen_ReadingAnEpochThatWasNeverSettled() public {
+        uint256 skipped = vault.currentEpoch();
+
+        vm.roll(block.number + 500_000);
+
+        vm.expectRevert(abi.encodeWithSelector(LeashVault.EpochNotAnchored.selector, skipped));
+        vault.rateAtEpoch(skipped, 0);
+    }
+
+    function test_FirstRebalanceInAnEpochAnchorsItOnce() public {
+        uint256 epoch = vault.currentEpoch();
+        bytes32 expected = blockhash(epoch * vault.RATE_EPOCH_BLOCKS() - 1);
+
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit LeashVault.EpochAnchored(epoch, expected);
+
+        vm.prank(agent);
+        vault.rebalance(_weights(3_334, 3_333, 3_333), RATIONALE);
+
+        // A second rebalance inside the same epoch must not redraw the market.
+        _rebalanceEvenly();
+        assertEq(vault.epochAnchor(epoch), expected, "an anchor is written once");
+    }
+
+    /// @dev {LeashVault._liveAnchor} reaches back to the block before the epoch
+    /// began, and has to keep reaching it from the epoch's last block.
+    function test_EpochFitsInsideTheBlockhashWindow() public view {
+        assertLt(vault.RATE_EPOCH_BLOCKS(), 256, "an epoch must stay inside blockhash range");
     }
 
     /// @dev The weighted return the vault applied has to match an independent
@@ -313,20 +362,18 @@ contract LeashVaultTest is Test {
 
     /// @dev Rolls forward to the next epoch in which every strategy pays at least
     /// -1%, so the loss that follows does not depend on how the book is allocated.
-    /// Chosen from the public derivation rather than forced with `vm.setBlockhash`:
-    /// the losing market is one the contract really produces.
+    /// The losing market is one the contract really produces, not one forced with
+    /// `vm.setBlockhash`. Each candidate has to be rolled into before it can be
+    /// read, which is the commitment property doing its job: a future epoch's
+    /// rates cannot be looked up, only arrived at.
     function _rollIntoAdverseEpoch() private {
         uint256 epochLen = vault.RATE_EPOCH_BLOCKS();
         uint256 first = block.number / epochLen + 1;
 
         for (uint256 epoch = first; epoch < first + 2_000; epoch++) {
-            if (
-                vault.rateAtEpoch(epoch, 0) <= -100 && vault.rateAtEpoch(epoch, 1) <= -100
-                    && vault.rateAtEpoch(epoch, 2) <= -100
-            ) {
-                vm.roll(epoch * epochLen);
-                return;
-            }
+            vm.roll(epoch * epochLen);
+            int256[] memory rates = vault.strategyRates();
+            if (rates[0] <= -100 && rates[1] <= -100 && rates[2] <= -100) return;
         }
         revert("no adverse epoch within search window");
     }
