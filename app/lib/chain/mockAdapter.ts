@@ -205,6 +205,10 @@ export class MockAdapter implements FullAdapter {
     return "0x000000000000000000000000000000000000AEA5";
   }
 
+  async getEpoch(): Promise<bigint> {
+    return this.currentEpoch();
+  }
+
   /* -------------------------- Owner-side, for the demo ----------------------- */
 
   deposit(amount: bigint): void {

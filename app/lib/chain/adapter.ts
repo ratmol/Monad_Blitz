@@ -55,6 +55,15 @@ export interface ChainDiagnostics {
   getAgentAddress(): string;
   /** Deployed vault address, or a synthetic one for the mock. */
   getVaultAddress(): string;
+  /**
+   * The epoch the chain is currently in.
+   *
+   * Added here rather than to {@link ChainAdapter} on purpose: that interface is the
+   * one both sides agreed on and it stays frozen. The bandit needs this because an
+   * epoch boundary redraws every rate, which makes it a change point — estimates
+   * carried across it are wrong, not merely stale.
+   */
+  getEpoch(): Promise<bigint>;
 }
 
 export type FullAdapter = ChainAdapter & ChainDiagnostics;

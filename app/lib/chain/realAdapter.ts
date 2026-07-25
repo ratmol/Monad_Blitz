@@ -236,6 +236,14 @@ export class RealAdapter implements FullAdapter {
     return this.vaultAddress;
   }
 
+  async getEpoch(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.vaultAddress,
+      abi: leashVaultAbi,
+      functionName: "currentEpoch",
+    });
+  }
+
   /* --------------------------------- Internals ------------------------------- */
 
   /**
