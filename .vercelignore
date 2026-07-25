@@ -1,0 +1,3 @@
+# Solidity toolchain. Nothing here is used to build or serve the Next app, and the
+# Foundry submodules under contracts/lib are large enough to slow every deploy.
+contracts
