@@ -21,8 +21,10 @@ the agent is assumed untrusted, and the vault contract is what constrains it.
   cooldown between reallocations, and halts the agent automatically if the
   vault draws down past a threshold.
 - Strategy returns are derived from on-chain block data, so the off-chain
-  service cannot influence the market and anyone can verify results
-  independently.
+  service cannot influence the market. Each period's returns are committed
+  to a block hash that did not exist when the period was chosen, and stored
+  on first use, so the market is unpredictable in advance and permanently
+  verifiable afterwards.
 - Every reallocation emits an event, so the agent's complete decision
   history is reconstructable from chain logs.
 
