@@ -1,3 +1,4 @@
+import type {NetworkTelemetry} from "../chain/network";
 import type {ArmStats} from "./bandit";
 import type {CostAssumptions} from "./gas";
 import type {TickRecord} from "./loop";
@@ -49,4 +50,12 @@ export interface DashboardState {
     vault: string | null;
     agent: string | null;
   };
+  /**
+   * Live Monad network readings, independent of whether our own vault is deployed.
+   *
+   * This is the only part of the payload that is real chain data while the contract
+   * is still unbroadcast, which is exactly why it is worth showing: it is measured
+   * from the public RPC, not asserted from a constant.
+   */
+  network: NetworkTelemetry;
 }
