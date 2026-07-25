@@ -1,0 +1,38 @@
+# secrets
+.env
+.env.local
+*.key
+*.pem
+
+# agent tooling (local only, never pushed)
+.claude/
+CLAUDE.md
+
+# planning docs (kept outside this folder, but guard anyway)
+*_Build_Plan.md
+*_Strategy.md
+notes/
+scratch/
+
+# node
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.log
+npm-debug.log*
+*.tsbuildinfo
+
+# foundry build output. lib/ is intentionally NOT ignored: dependencies are git
+# submodules, so ignoring them would leave a fresh clone unable to compile.
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# editor / os
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
