@@ -196,3 +196,59 @@ describe("the history the dashboard reads", () => {
     expect((await adapter.getState()).totalValue).toBe(bookBefore);
   });
 });
+
+describe("the baseline against an unfunded vault", () => {
+  /**
+   * Both of these shipped broken once. A freshly deployed vault holds nothing until
+   * the owner deposits, so the agent's first ticks read `totalValue: 0` — and the
+   * baseline used to seed from that. `settle` is multiplicative, so a zero seed is
+   * permanent: the race chart, which is the hero visual, silently loses its second
+   * line and looks like a rendering fault rather than a seeding one.
+   */
+  function unfunded() {
+    const clock = fakeClock();
+    const adapter = new MockAdapter({
+      now: clock.now,
+      startBlock: START_BLOCK,
+      principal: 0n,
+    });
+    return {clock, adapter, loop: new AgentLoop(adapter, {random: () => 0.99})};
+  }
+
+  it("does not seed the baseline from an empty vault", async () => {
+    const {clock, adapter, loop} = unfunded();
+
+    await tick(loop, clock);
+    await tick(loop, clock);
+    expect(loop.snapshot().history.at(-1)?.baselineValue).toBe(0);
+
+    adapter.deposit(parseEther("100"));
+    for (let i = 0; i < 4; i++) await tick(loop, clock);
+
+    const last = loop.snapshot().history.at(-1);
+    expect(last!.baselineValue).toBeGreaterThan(0);
+    // The whole point: it tracks the market instead of being pinned to zero.
+    expect(last!.baselineValue).not.toBe(100);
+  });
+
+  it("does not turn an owner deposit into a fake lead for the agent", async () => {
+    // Cash flow is not performance. Doubling the book mid-run must move both lines,
+    // or the agent appears to win by 100% for doing nothing.
+    const {clock, adapter, loop} = unfunded();
+
+    adapter.deposit(parseEther("100"));
+    for (let i = 0; i < 3; i++) await tick(loop, clock);
+
+    const before = loop.snapshot().history.at(-1)!;
+    const gapBefore = before.agentValue / before.baselineValue;
+
+    adapter.deposit(parseEther("100"));
+    await tick(loop, clock);
+
+    const after = loop.snapshot().history.at(-1)!;
+    expect(after.agentValue).toBeGreaterThan(before.agentValue * 1.5);
+    // The ratio between the two lines is what the chart reads as "who is winning".
+    // A deposit must leave it alone.
+    expect(after.agentValue / after.baselineValue).toBeCloseTo(gapBefore, 2);
+  });
+});

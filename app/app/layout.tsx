@@ -20,10 +20,20 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * Next cannot compute fallback metrics for Big Shoulders, so it silently skips
+ * generating an adjusted fallback and the headline reflows when the real face
+ * arrives — on a projector that reads as the page breaking, not loading. Opting out
+ * explicitly and naming a condensed stack keeps the pre-swap render close enough in
+ * width that the swap is not visible from the back of a room.
+ */
 const bigShoulders = Big_Shoulders({
   variable: "--font-big-shoulders",
   weight: ["600", "700", "800"],
   subsets: ["latin"],
+  display: "swap",
+  adjustFontFallback: false,
+  fallback: ["Arial Narrow", "Helvetica Neue", "Arial", "sans-serif"],
 });
 
 export const metadata: Metadata = {

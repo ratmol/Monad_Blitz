@@ -141,9 +141,38 @@ export class AgentLoop {
     const [epoch, before] = await Promise.all([this.adapter.getEpoch(), this.adapter.getState()]);
 
     // Start the baseline from whatever the vault is actually holding, so both lines
-    // begin at the same number and the race is legible. Held in a local because
-    // property narrowing does not survive the awaits below.
-    const baseline = (this.baseline ??= new BaselineAgent(toWei(before.totalValue)));
+    // begin at the same number and the race is legible.
+    //
+    // Deferred until there is actually capital to track. `settle` is multiplicative,
+    // so a baseline seeded at zero stays at zero forever no matter what the market
+    // does — and against a live chain the very first tick usually *is* zero, because
+    // the vault exists from the moment it is deployed but holds nothing until the
+    // owner deposits. Seeding then would silently kill the race chart, which is the
+    // hero visual, and it would look like a rendering bug rather than a seeding one.
+    if (this.baseline === null && before.totalValue > 0) {
+      this.baseline = new BaselineAgent(toWei(before.totalValue));
+    }
+
+    // The vault moved between our ticks without us settling, so the owner deposited
+    // or withdrew. Scale the baseline by the same factor or the chart shows a
+    // divergence that is pure cash flow: deposit half the book again mid-demo and the
+    // agent appears to beat the baseline by 50% for doing nothing.
+    if (
+      this.baseline !== null &&
+      this.lastValue !== null &&
+      this.lastValue > 0 &&
+      before.totalValue !== this.lastValue
+    ) {
+      this.baseline.resize(toWei(before.totalValue), toWei(this.lastValue));
+    }
+
+    // Held in a local because property narrowing does not survive the awaits below.
+    const baseline = this.baseline;
+
+    // Until there is capital, the two are the same number by definition — nothing has
+    // happened that could have separated them. Reporting zero instead would draw a
+    // flat line along the axis and read as a broken baseline.
+    const baselineValue = () => (baseline === null ? before.totalValue : fromWei(baseline.valueWei));
 
     if (before.halted) {
       this.stop();
@@ -151,7 +180,7 @@ export class AgentLoop {
         at: Date.now(),
         epoch: epoch.toString(),
         agentValue: before.totalValue,
-        baselineValue: fromWei(baseline.valueWei),
+        baselineValue: baselineValue(),
         weights: before.weights,
         ratesBps: before.rates,
         realisedBps: null,
@@ -202,7 +231,7 @@ export class AgentLoop {
       this.lastValue = after.totalValue;
       // Settle the baseline against the same rates the vault just used, so the only
       // difference between the two books is the allocation policy.
-      if (before.rates.length > 0) baseline.settle(before.rates);
+      if (before.rates.length > 0 && baseline !== null) baseline.settle(before.rates);
     }
 
     // The breaker tripping on this very tick is the demo's drawdown moment. Stop
@@ -213,7 +242,7 @@ export class AgentLoop {
       at: Date.now(),
       epoch: epoch.toString(),
       agentValue: after.totalValue,
-      baselineValue: fromWei(baseline.valueWei),
+      baselineValue: baselineValue(),
       weights: after.weights,
       ratesBps: before.rates,
       realisedBps,
