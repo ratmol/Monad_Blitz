@@ -34,8 +34,19 @@ export const MAX_ABS_RATE_BPS = 200n;
  * Blocks a rate holds for before it is redrawn. ~200 blocks is about a minute at
  * Monad's block time, or roughly twenty ticks — long enough for the bandit to
  * learn a rate, short enough that it changes a few times during a demo.
+ *
+ * Must stay strictly below {@link BLOCKHASH_WINDOW_BLOCKS}. An epoch is anchored to
+ * the hash of the block before it began, and that hash has to still be readable at
+ * every block inside the epoch or the rate stops resolving mid-period.
  */
 export const RATE_EPOCH_BLOCKS = 200n;
+
+/**
+ * How far back `blockhash` reaches on the EVM. Not a LeashVault constant — a
+ * property of the machine — but the mock has to reproduce the window to reproduce
+ * the contract, and `RATE_EPOCH_BLOCKS` is only safe relative to it.
+ */
+export const BLOCKHASH_WINDOW_BLOCKS = 256n;
 
 /** Monad testnet. */
 export const MONAD_TESTNET_CHAIN_ID = 10143;

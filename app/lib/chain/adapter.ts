@@ -68,6 +68,22 @@ export class RebalanceRejected extends Error {
 }
 
 /**
+ * The seam's mirror of `LeashVault.EpochNotAnchored`.
+ *
+ * An epoch's market is derived from the hash of the block before it began, so a
+ * rate only exists once that block is mined. Reads for a future epoch — or for a
+ * past one nobody ever rebalanced in, whose hash has since aged out of the EVM's
+ * 256 block window — revert rather than invent a number. Both adapters raise this
+ * so callers above the seam handle one failure, not two.
+ */
+export class EpochNotAnchored extends Error {
+  constructor(readonly epoch: bigint) {
+    super(`epoch ${epoch} is not anchored: its market has not been drawn yet`);
+    this.name = "EpochNotAnchored";
+  }
+}
+
+/**
  * Hashes the agent's stated reason for a decision. Only the hash goes on-chain;
  * the text lives off-chain, and anyone holding it can verify it against the log.
  */

@@ -1,6 +1,8 @@
 import {
   Account,
   Address,
+  BaseError,
+  ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
   formatEther,
@@ -38,6 +40,23 @@ export interface RealAdapterConfig {
 
 /** Warn below this balance. At ~1,200 tx/hour a faucet-funded wallet empties quickly. */
 export const LOW_BALANCE_WARN_WEI = parseEther("0.1");
+
+/**
+ * True only for a revert that decoded to `EpochNotAnchored`.
+ *
+ * Matched on the decoded error name, never on message text: viem wraps a revert in
+ * two or three layers of `BaseError`, and string-matching would swallow an RPC
+ * outage as a missing anchor and show a confidently wrong dashboard. `walk` finds
+ * the decoded revert inside the wrapping; anything that is not one falls through to
+ * the caller and surfaces as the failure it actually is.
+ */
+export function isEpochNotAnchored(error: unknown): boolean {
+  if (!(error instanceof BaseError)) return false;
+  const revert = error.walk((e) => e instanceof ContractFunctionRevertedError);
+  return (
+    revert instanceof ContractFunctionRevertedError && revert.data?.errorName === "EpochNotAnchored"
+  );
+}
 
 export class RealAdapter implements FullAdapter {
   readonly isMock = false;
@@ -98,19 +117,68 @@ export class RealAdapter implements FullAdapter {
    * two; reading weights, value, halted, and rates separately would be four
    * round-trips per poll against a public endpoint, which is how you get
    * rate-limited off a free tier.
+   *
+   * `getState` reverts if the current epoch has no readable anchor, because it
+   * reads `strategyRates()`. In practice that is the window between a fresh deploy
+   * and the first rebalance, and it is narrow — but a revert in the polling path is
+   * a dead dashboard on stage, so it is caught rather than propagated. Only the
+   * rates are unavailable in that case; weights, value and the halted flag still
+   * matter and are still fetched, so the fallback re-reads them individually rather
+   * than blanking the UI.
    */
   async getState(): Promise<VaultState> {
-    const [weights, bookValue, halted, rates] = await this.publicClient.readContract({
-      address: this.vaultAddress,
-      abi: leashVaultAbi,
-      functionName: "getState",
-    });
+    try {
+      const [weights, bookValue, halted, rates] = await this.publicClient.readContract({
+        address: this.vaultAddress,
+        abi: leashVaultAbi,
+        functionName: "getState",
+      });
+
+      return {
+        weights: weights.map(Number),
+        totalValue: Number(formatEther(bookValue)),
+        halted,
+        rates: rates.map(Number),
+      };
+    } catch (error) {
+      if (!isEpochNotAnchored(error)) throw error;
+      return this.getStateWithoutRates();
+    }
+  }
+
+  /**
+   * The degraded read for an epoch whose market has not been drawn yet. Three calls
+   * instead of one, which is fine: this path runs at most until the first rebalance
+   * of an epoch lands, never in the steady state.
+   *
+   * `rates` comes back empty rather than zero-filled. Zeroes would render as a
+   * genuine break-even market and quietly become a real-looking data point; an
+   * empty array forces every consumer to decide what "no market yet" looks like.
+   */
+  private async getStateWithoutRates(): Promise<VaultState> {
+    const [weights, bookValue, halted] = await Promise.all([
+      this.publicClient.readContract({
+        address: this.vaultAddress,
+        abi: leashVaultAbi,
+        functionName: "weights",
+      }),
+      this.publicClient.readContract({
+        address: this.vaultAddress,
+        abi: leashVaultAbi,
+        functionName: "totalValue",
+      }),
+      this.publicClient.readContract({
+        address: this.vaultAddress,
+        abi: leashVaultAbi,
+        functionName: "isHalted",
+      }),
+    ]);
 
     return {
       weights: weights.map(Number),
       totalValue: Number(formatEther(bookValue)),
       halted,
-      rates: rates.map(Number),
+      rates: [],
     };
   }
 
