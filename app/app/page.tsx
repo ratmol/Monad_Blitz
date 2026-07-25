@@ -1,9 +1,15 @@
+import {AgentLoop} from "./components/AgentLoop";
+import {CTA} from "./components/CTA";
 import {Dashboard} from "./components/Dashboard";
+import {Hero} from "./components/Hero";
+import {NetworkTether} from "./components/NetworkTether";
+import {WhyMonad} from "./components/WhyMonad";
 import {EpochNotAnchored} from "../lib/chain/adapter";
 import {explorerAddressUrl, MAX_DRAWDOWN_BPS, TICK_INTERVAL_MS} from "../lib/chain/constants";
 import type {DashboardState} from "../lib/agent/dashboard";
 import {compareCost} from "../lib/agent/gas";
 import {runtime} from "../lib/agent/runtime";
+import {networkTelemetry} from "../lib/chain/network";
 
 /**
  * Server shell. Reads state once so the first paint already has data — a dashboard
@@ -20,7 +26,7 @@ export default async function Page() {
   loop.start();
 
   const snapshot = loop.snapshot();
-  const stats = await adapter.getStats();
+  const [stats, network] = await Promise.all([adapter.getStats(), networkTelemetry()]);
   const cost = compareCost(stats.txCount, stats.totalGas);
 
   let vault: DashboardState["vault"];
@@ -73,7 +79,19 @@ export default async function Page() {
       vault: mode === "live" ? explorerAddressUrl(adapter.getVaultAddress()) : null,
       agent: mode === "live" ? explorerAddressUrl(adapter.getAgentAddress()) : null,
     },
+    network,
   };
 
-  return <Dashboard initial={initial} />;
+  return (
+    <>
+      <Hero />
+      <AgentLoop />
+      <NetworkTether network={network} />
+      <div id="dashboard" className="snap-section">
+        <Dashboard initial={initial} />
+      </div>
+      <WhyMonad cost={initial.cost} />
+      <CTA vaultLink={initial.links.vault} agentLink={initial.links.agent} />
+    </>
+  );
 }
