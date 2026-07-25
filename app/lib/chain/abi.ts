@@ -1,5 +1,5 @@
 /**
- * ABI for LeashVault, narrowed to what the adapter and dashboard use.
+ * ABI for LeashVault, copied whole from the build artifact.
  *
  * Generated from `contracts/out/LeashVault.sol/LeashVault.json`. Regenerate after
  * changing the contract interface; `as const` is what gives viem its argument and
@@ -7,6 +7,22 @@
  * surprise.
  */
 export const leashVaultAbi = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "initialOwner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "initialAgent",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
   {
     "type": "function",
     "name": "BPS_DENOMINATOR",
@@ -113,6 +129,19 @@ export const leashVaultAbi = [
   },
   {
     "type": "function",
+    "name": "currentEpoch",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "deposit",
     "inputs": [],
     "outputs": [],
@@ -127,6 +156,25 @@ export const leashVaultAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "epochAnchor",
+    "inputs": [
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -200,12 +248,49 @@ export const leashVaultAbi = [
   },
   {
     "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rateAtEpoch",
     "inputs": [
       {
         "name": "epoch",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "strategyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "rateFromAnchor",
+    "inputs": [
+      {
+        "name": "anchor",
+        "type": "bytes32",
+        "internalType": "bytes32"
       },
       {
         "name": "strategyId",
@@ -237,6 +322,13 @@ export const leashVaultAbi = [
         "internalType": "bytes32"
       }
     ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -297,6 +389,19 @@ export const leashVaultAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -370,6 +475,25 @@ export const leashVaultAbi = [
   },
   {
     "type": "event",
+    "name": "EpochAnchored",
+    "inputs": [
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "anchor",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Halted",
     "inputs": [
       {
@@ -389,6 +513,25 @@ export const leashVaultAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -477,6 +620,17 @@ export const leashVaultAbi = [
     "inputs": [
       {
         "name": "secondsRemaining",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EpochNotAnchored",
+    "inputs": [
+      {
+        "name": "epoch",
         "type": "uint256",
         "internalType": "uint256"
       }
