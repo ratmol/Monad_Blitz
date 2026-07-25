@@ -72,30 +72,79 @@ connection.
 
 ## Running locally
 
+Clone with submodules. Foundry dependencies are git submodules, so without
+the flag `contracts/lib/` arrives empty and nothing compiles:
+
 ```bash
-# contracts
+git clone --recurse-submodules https://github.com/ratmol/Monad_Blitz.git
+cd Monad_Blitz
+```
+
+Already cloned without it? `git submodule update --init --recursive`.
+
+### Contracts
+
+Install Foundry, then build and test:
+
+```bash
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+
 cd contracts
 forge build
 forge test
-forge script script/Deploy.s.sol --rpc-url $MONAD_RPC_URL --broadcast
+```
 
-# app
+On Windows in Git Bash, `foundryup` cannot detect the shell and will not
+edit your PATH. Add it yourself before `foundryup` will resolve:
+
+```bash
+export PATH="$HOME/.foundry/bin:$PATH"   # add to ~/.bashrc to persist
+```
+
+### Deploying to Monad testnet
+
+`monad_testnet` is defined under `rpc_endpoints` in `foundry.toml`, so the
+URL does not need repeating on the command line.
+
+```bash
+cp .env.example .env     # fill in PRIVATE_KEY and AGENT_ADDRESS
+set -a && source .env && set +a
+
+cd contracts
+forge script script/Deploy.s.sol --rpc-url monad_testnet          # simulate, free
+forge script script/Deploy.s.sol --rpc-url monad_testnet --broadcast   # spends MON
+```
+
+Run the simulation first. It costs nothing, confirms the chain id, and
+prints the gas estimate. Only the second command spends MON, roughly 0.3 at
+current testnet gas prices.
+
+The deploy script asserts `block.chainid == 10143` and reverts before
+spending anything if the RPC points at the wrong network.
+
+### App
+
+```bash
 cd app
 npm install
-cp .env.example .env   # fill in RPC url, agent key, vault address
 npm run dev
 ```
 
 ## Environment
 
-```
-MONAD_RPC_URL=
-AGENT_PRIVATE_KEY=
-VAULT_ADDRESS=
-```
+| Variable | Used by | Purpose |
+|---|---|---|
+| `PRIVATE_KEY` | deploy script | deployer key, becomes the vault owner |
+| `AGENT_ADDRESS` | deploy script | address permitted to call `rebalance()` |
+| `MONAD_RPC_URL` | agent service | testnet RPC endpoint |
+| `AGENT_PRIVATE_KEY` | agent service | key matching `AGENT_ADDRESS` |
+| `VAULT_ADDRESS` | agent service, dashboard | deployed vault, set after deploy |
 
-Use a throwaway wallet funded from the Monad testnet faucet. Never a wallet
-that holds real funds.
+`PRIVATE_KEY` must be 0x-prefixed. Use a throwaway wallet funded from the
+Monad testnet faucet, never a wallet that holds real funds. `.env` is
+gitignored; so are `contracts/cache/` and `contracts/broadcast/`, which is
+where Foundry writes deploy artifacts containing the signing key.
 
 ## License
 
