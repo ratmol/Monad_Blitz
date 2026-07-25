@@ -7,7 +7,6 @@ import {
   createWalletClient,
   formatEther,
   http,
-  parseEther,
   PublicClient,
   WalletClient,
 } from "viem";
@@ -37,9 +36,6 @@ export interface RealAdapterConfig {
   agentPrivateKey: `0x${string}`;
   rpcUrl?: string;
 }
-
-/** Warn below this balance. At ~1,200 tx/hour a faucet-funded wallet empties quickly. */
-export const LOW_BALANCE_WARN_WEI = parseEther("0.1");
 
 /**
  * True only for a revert that decoded to `EpochNotAnchored`.
