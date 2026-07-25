@@ -128,7 +128,11 @@ export function Dashboard({initial}: {initial: DashboardState}) {
           title="Why this only works on Monad"
           subtitle="Gas measured from real receipts; token prices are stated assumptions."
         >
-          <MonadCounter cost={cost} />
+          <MonadCounter
+            cost={cost}
+            agentBalanceWei={vault.agentBalanceWei}
+            live={state.mode === "live"}
+          />
         </Panel>
 
         <Panel

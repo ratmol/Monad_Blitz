@@ -23,11 +23,15 @@ export interface CostAssumptions {
 /**
  * Deliberately conservative on the Ethereum side. The argument does not need a gas
  * spike to work, and picking a peak number invites "you cherry-picked congestion".
+ *
+ * The Monad gas price is measured, not guessed: `cast gas-price` against
+ * testnet-rpc.monad.xyz returned 102 gwei on 2026-07-25. Re-check it on demo day —
+ * it feeds the MON burn rate, which is what actually drains the faucet wallet.
  */
 export const DEFAULT_ASSUMPTIONS: CostAssumptions = {
   ethereumGasPriceGwei: 8,
   ethereumPriceUsd: 3_000,
-  monadGasPriceGwei: 50,
+  monadGasPriceGwei: 102,
   monadPriceUsd: 0.01,
 };
 
@@ -41,6 +45,14 @@ export interface CostComparison {
   /** Extrapolated to the pitch's 1,200 tx/hour, 24 hours. */
   ethereumUsdPerDay: number;
   monadUsdPerDay: number;
+  /** MON actually burned so far. */
+  monadMon: number;
+  /**
+   * MON burned per hour at the strategy's real cadence. This is the operational
+   * number, not a pitch number: it is what empties the faucet-funded agent wallet
+   * mid-demo, and it is the one to check a balance against before pitching.
+   */
+  monadMonPerHour: number;
   assumptions: CostAssumptions;
 }
 
@@ -48,8 +60,13 @@ export interface CostComparison {
 export const TX_PER_HOUR = 1_200;
 const TX_PER_DAY = TX_PER_HOUR * 24;
 
+/** Gas units × price in gwei → whole tokens. */
+function tokens(gasUnits: number, gasPriceGwei: number): number {
+  return gasUnits * gasPriceGwei * 1e-9;
+}
+
 function usd(gasUnits: number, gasPriceGwei: number, tokenPriceUsd: number): number {
-  return (gasUnits * gasPriceGwei * 1e-9) * tokenPriceUsd;
+  return tokens(gasUnits, gasPriceGwei) * tokenPriceUsd;
 }
 
 export function compareCost(
@@ -76,6 +93,8 @@ export function compareCost(
       assumptions.monadGasPriceGwei,
       assumptions.monadPriceUsd,
     ),
+    monadMon: tokens(gas, assumptions.monadGasPriceGwei),
+    monadMonPerHour: tokens(gasPerTx * TX_PER_HOUR, assumptions.monadGasPriceGwei),
     assumptions,
   };
 }

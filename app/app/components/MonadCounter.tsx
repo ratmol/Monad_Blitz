@@ -15,19 +15,56 @@ import {formatUsd, Stat} from "./primitives";
  * The daily figures extrapolate the measured per-transaction gas to the strategy's
  * actual cadence: a rebalance every 3s is 1,200/hour, 28,800/day.
  */
-export function MonadCounter({cost}: {cost: DashboardState["cost"]}) {
+export function MonadCounter({
+  cost,
+  agentBalanceWei,
+  live,
+}: {
+  cost: DashboardState["cost"];
+  agentBalanceWei: string;
+  live: boolean;
+}) {
   const {assumptions} = cost;
+
+  // Hours of runway left in the agent wallet at the strategy's real cadence. This is
+  // the number that actually ends a live demo, and it is worth seeing before it does.
+  const balanceMon = Number(BigInt(agentBalanceWei)) / 1e18;
+  const hoursLeft = cost.monadMonPerHour > 0 ? balanceMon / cost.monadMonPerHour : null;
+  const lowRunway = hoursLeft !== null && hoursLeft < 1;
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
         <Stat label="Transactions" value={cost.txCount.toLocaleString()} tone="agent" />
         <Stat
           label="Gas used"
           value={Number(cost.totalGas).toLocaleString()}
           hint={cost.gasPerTx > 0 ? `${Math.round(cost.gasPerTx).toLocaleString()} per tx` : undefined}
         />
-        <Stat label="Cost here" value={formatUsd(cost.monadUsd)} tone="gain" />
+        <Stat
+          label="Spent here"
+          value={`${cost.monadMon.toFixed(3)} MON`}
+          tone="gain"
+          hint={formatUsd(cost.monadUsd)}
+        />
+        {live ? (
+          <Stat
+            label="Agent wallet"
+            value={`${balanceMon.toFixed(2)} MON`}
+            tone={lowRunway ? "loss" : "neutral"}
+            hint={
+              hoursLeft === null
+                ? undefined
+                : `~${hoursLeft.toFixed(1)}h left at ${cost.monadMonPerHour.toFixed(1)} MON/h`
+            }
+          />
+        ) : (
+          <Stat
+            label="Burn rate"
+            value={`${cost.monadMonPerHour.toFixed(1)} MON/h`}
+            hint="at 1,200 tx/hour"
+          />
+        )}
       </div>
 
       <div className="rounded-lg border border-loss/40 bg-loss/5 p-4">

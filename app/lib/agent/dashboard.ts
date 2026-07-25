@@ -31,6 +31,8 @@ export interface DashboardState {
     ethereumUsd: number;
     ethereumUsdPerDay: number;
     monadUsdPerDay: number;
+    monadMon: number;
+    monadMonPerHour: number;
     assumptions: CostAssumptions;
   };
   vault: {
